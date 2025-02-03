@@ -75,7 +75,7 @@ def handle_document(update: Update, context: CallbackContext):
 # Main function
 def main():
     # Replace 'YOUR_TOKEN' with your bot token
-    updater = Updater("YOUR_TOKEN", use_context=True)
+    updater = Updater("6040076450:AAE1R9oM7QmtwBbnURhzLZ2GeYTayI7EkmY", use_context=True)
     dp = updater.dispatcher
 
     # Add handlers
