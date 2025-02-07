@@ -4,7 +4,7 @@ import logging
 import asyncio
 from telegram import Update, InputFile
 from telegram.ext import (
-    Dispatcher,
+    Application,
     CommandHandler,
     MessageHandler,
     filters,
@@ -153,10 +153,7 @@ async def handle_subtitle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
-    from telegram.ext import Updater
-
-    updater = Updater(token=BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    application = Application.builder().token(6040076450:AAE1R9oM7QmtwBbnURhzLZ2GeYTayI7EkmY).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("burn_subtitle", burn_subtitle)],
@@ -167,11 +164,10 @@ def main():
         fallbacks=[CommandHandler("cancel", start)],
     )
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(conv_handler)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(conv_handler)
 
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
