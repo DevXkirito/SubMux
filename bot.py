@@ -1,11 +1,10 @@
 import os
 import re
 import logging
-import subprocess
 import asyncio
 from telegram import Update, InputFile
 from telegram.ext import (
-    Application,
+    Dispatcher,
     CommandHandler,
     MessageHandler,
     filters,
@@ -14,8 +13,10 @@ from telegram.ext import (
 )
 
 # Configuration
-BOT_TOKEN = os.getenv("6040076450:AAE1R9oM7QmtwBbnURhzLZ2GeYTayI7EkmY")
-FONT_NAME = "Helvetica Rounded Bold"
+API_ID = 22641991  # Replace with your API ID
+API_HASH = "364c5c5f81e1f1fc3a19a8b41a5ea98f"  # Replace with your API Hash
+BOT_TOKEN = "6040076450:AAE1R9oM7QmtwBbnURhzLZ2GeYTayI7EkmY"  # Replace with your Bot Token
+FONT_NAME = "HelveticaRounded-Bold.otf"
 FONT_SIZE = 20
 FONT_COLOR = "white"
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
@@ -37,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-async def burn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def burn_subtitle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Please send the video file first")
     return WAITING_VIDEO
 
@@ -152,10 +153,13 @@ async def handle_subtitle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    from telegram.ext import Updater
+
+    updater = Updater(token=BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("burn", burn_subtitle)],
+        entry_points=[CommandHandler("burn_subtitle", burn_subtitle)],
         states={
             WAITING_VIDEO: [MessageHandler(filters.Document.VIDEO | filters.Document.MIME_VIDEO, handle_video)],
             WAITING_SUBS: [MessageHandler(filters.Document.MIME_TYPE("text/plain") | filters.Document.MIME_TYPE("text/x-ssa"), handle_subtitle)],
@@ -163,10 +167,11 @@ def main():
         fallbacks=[CommandHandler("cancel", start)],
     )
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(conv_handler)
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(conv_handler)
 
-    application.run_polling()
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
