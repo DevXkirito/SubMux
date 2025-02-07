@@ -1,0 +1,8 @@
+version: '1.0'
+services:
+  - name: submux
+    build:
+      buildpacks:
+        - https://github.com/heroku/heroku-buildpack-apt.git
+        - https://github.com/heroku/heroku-buildpack-ffmpeg.git
+        - https://github.com/heroku/heroku-buildpack-python.git
