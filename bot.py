@@ -158,8 +158,8 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("burn_subtitle", burn_subtitle)],
         states={
-            WAITING_VIDEO: [MessageHandler(filters.Document.VIDEO | filters.Document.MIME_VIDEO, handle_video)],
-            WAITING_SUBS: [MessageHandler(filters.Document.MIME_TYPE("text/plain") | filters.Document.MIME_TYPE("text/x-ssa"), handle_subtitle)],
+            WAITING_VIDEO: [MessageHandler(filters.Document.VIDEO | filters.Document.MimeType("video/*"), handle_video)],
+            WAITING_SUBS: [MessageHandler(filters.Document.MimeType("text/plain") | filters.Document.MimeType("text/x-ssa"), handle_subtitle)],
         },
         fallbacks=[CommandHandler("cancel", start)],
     )
