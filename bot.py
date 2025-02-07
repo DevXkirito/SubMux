@@ -1,91 +1,172 @@
 import os
+import re
+import logging
 import subprocess
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from telegram.error import TelegramError
+import asyncio
+from telegram import Update, InputFile
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    ConversationHandler,
+)
 
 # Configuration
-FONT_PATH = "fonts/HelveticaRounded-Bold.otf"
-OUTPUT_DIR = "output"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+BOT_TOKEN = os.getenv("6040076450:AAE1R9oM7QmtwBbnURhzLZ2GeYTayI7EkmY")
+FONT_NAME = "Helvetica Rounded Bold"
+FONT_SIZE = 20
+FONT_COLOR = "white"
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
-# Start command
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Welcome! Send me a video and a subtitle file (SRT or ASS).")
+# Conversation states
+WAITING_VIDEO, WAITING_SUBS = range(2)
 
-# Ping command
-def ping(update: Update, context: CallbackContext):
-    update.message.reply_text("Pong! The bot is alive and ready to process your requests.")
+# Setup logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Process video with subtitles
-def process_video_with_subtitles(video_path, subtitle_path, output_path):
-    command = [
-        "ffmpeg",
-        "-i", video_path,
-        "-vf", f"subtitles={subtitle_path}:force_style='FontName=Helvetica Rounded Bold,FontSize=20,PrimaryColour=&HFFFFFF&,BorderStyle=1'",
-        "-c:v", "libx265",  # H.265 codec
-        "-pix_fmt", "yuv420p10le",  # 10-bit color depth
-        "-preset", "medium",  # Encoding speed/quality tradeoff
-        "-crf", "23",  # Quality level (lower is better)
-        "-c:a", "copy",  # Copy audio stream without re-encoding
-        output_path
-    ]
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Send /burn_subtitle to start the process of adding subtitles to your video.\n"
+        "Supported video formats: MP4, MKV\n"
+        "Supported subtitle formats: SRT, ASS"
+    )
+    return ConversationHandler.END
+
+async def burn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Please send the video file first")
+    return WAITING_VIDEO
+
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    video_file = await update.message.document.get_file()
     
-    # Progress bar
-    for line in process.stdout:
-        print(line.strip())
-        if "frame=" in line:
-            frame_info = line.split("frame=")[1].split("fps")[0].strip()
-            context.bot.send_message(chat_id=update.effective_chat.id, text=f"Processing frame {frame_info}...")
+    # Store file info in context
+    context.user_data["video_file"] = video_file
+    context.user_data["video_ext"] = update.message.document.file_name.split(".")[-1]
     
-    process.wait()
+    await update.message.reply_text("Now please send the subtitle file")
+    return WAITING_SUBS
 
-# Handle document uploads
-def handle_document(update: Update, context: CallbackContext):
-    document = update.message.document
-    file_id = document.file_id
-    file_name = document.file_name
-    file_path = os.path.join(OUTPUT_DIR, file_name)
+async def handle_subtitle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    sub_file = await update.message.document.get_file()
+    
+    # Create temporary filenames
+    input_video = f"temp_{user.id}_input.{context.user_data['video_ext']}"
+    input_sub = f"temp_{user.id}_sub.{update.message.document.file_name.split('.')[-1]}"
+    output_video = f"temp_{user.id}_output.{context.user_data['video_ext']}"
 
-    # Download the file
-    file = context.bot.get_file(file_id)
-    file.download(file_path)
+    try:
+        # Download files
+        await context.user_data["video_file"].download_to_drive(input_video)
+        await sub_file.download_to_drive(input_sub)
 
-    if file_name.endswith((".mp4", ".mkv")):
-        context.user_data["video_path"] = file_path
-        update.message.reply_text("Video received. Now send the subtitle file (SRT or ASS).")
-    elif file_name.endswith((".srt", ".ass")):
-        context.user_data["subtitle_path"] = file_path
-        update.message.reply_text("Subtitle received. Processing...")
+        # FFmpeg command with improved escaping
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            input_video,
+            "-filter_complex",
+            f"[0:v]scale=1920:1080,subtitles=f={input_sub}:fontsdir='{FONT_DIR}':force_style='FontName={FONT_NAME},FontSize={FONT_SIZE},PrimaryColour={FONT_COLOR}'[v]",
+            "-map",
+            "[v]",
+            "-map",
+            "0:a?",
+            "-c:v",
+            "libx265",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p10le",
+            output_video,
+        ]
 
-        # Check if both video and subtitle are received
-        video_path = context.user_data.get("video_path")
-        subtitle_path = context.user_data.get("subtitle_path")
-        if video_path and subtitle_path:
-            output_path = os.path.join(OUTPUT_DIR, "output.mkv")
-            process_video_with_subtitles(video_path, subtitle_path, output_path)
-            update.message.reply_document(document=open(output_path, "rb"))
-            update.message.reply_text("Processing complete!")
-            # Clean up
-            os.remove(video_path)
-            os.remove(subtitle_path)
-            os.remove(output_path)
+        process = await asyncio.create_subprocess_exec(
+            *ffmpeg_cmd,
+            stderr=asyncio.subprocess.PIPE,
+        )
 
-# Main function
+        progress_msg = await update.message.reply_text("Processing: 0% [░░░░░░░░░░]")
+        duration = None
+
+        while True:
+            line = await process.stderr.readline()
+            if not line:
+                break
+
+            line = line.decode().strip()
+            
+            # Get duration
+            if not duration:
+                duration_match = re.search(r"Duration: (\d+:\d+:\d+\.\d+)", line)
+                if duration_match:
+                    duration_parts = duration_match.group(1).split(":")
+                    duration = (
+                        float(duration_parts[0]) * 3600
+                        + float(duration_parts[1]) * 60
+                        + float(duration_parts[2])
+                    )
+
+            # Update progress
+            time_match = re.search(r"time=(\d+:\d+:\d+\.\d+)", line)
+            if time_match and duration:
+                time_parts = time_match.group(1).split(":")
+                current_time = (
+                    float(time_parts[0]) * 3600
+                    + float(time_parts[1]) * 60
+                    + float(time_parts[2])
+                )
+                progress = min(current_time / duration, 1.0)
+                bar = "█" * int(progress * 20) + "░" * (20 - int(progress * 20))
+                await progress_msg.edit_text(
+                    f"Processing: {int(progress*100)}% [{bar}]"
+                )
+
+        if await process.wait() == 0:
+            await update.message.reply_document(
+                document=InputFile(output_video), caption="Processed Video"
+            )
+        else:
+            await update.message.reply_text("Error processing video")
+
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        await update.message.reply_text(f"Error processing video: {str(e)}")
+    finally:
+        # Cleanup files
+        for f in [input_video, input_sub, output_video]:
+            try:
+                if os.path.exists(f):
+                    os.remove(f)
+            except Exception as e:
+                logger.error(f"Error deleting file {f}: {str(e)}")
+
+    return ConversationHandler.END
+
 def main():
-    # Replace 'YOUR_TOKEN' with your bot token
-    updater = Updater("6040076450:AAE1R9oM7QmtwBbnURhzLZ2GeYTayI7EkmY", use_context=True)
-    dp = updater.dispatcher
+    application = Application.builder().token(BOT_TOKEN).build()
 
-    # Add handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("ping", ping))  # Add ping command handler
-    dp.add_handler(MessageHandler(Filters.document, handle_document))
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("burn", burn_subtitle)],
+        states={
+            WAITING_VIDEO: [MessageHandler(filters.Document.VIDEO | filters.Document.MIME_VIDEO, handle_video)],
+            WAITING_SUBS: [MessageHandler(filters.Document.MIME_TYPE("text/plain") | filters.Document.MIME_TYPE("text/x-ssa"), handle_subtitle)],
+        },
+        fallbacks=[CommandHandler("cancel", start)],
+    )
 
-    # Start the bot
-    updater.start_polling()
-    updater.idle()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(conv_handler)
+
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
