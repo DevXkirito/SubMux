@@ -153,7 +153,7 @@ async def handle_subtitle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
-    application = Application.builder().token(6040076450:AAE1R9oM7QmtwBbnURhzLZ2GeYTayI7EkmY).build()
+    application = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("burn_subtitle", burn_subtitle)],
