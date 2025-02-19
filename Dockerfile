@@ -1,17 +1,22 @@
-# Base image
-FROM python:3.9-slim
+FROM python:3.10
 
+# Install required dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    fontconfig \
+    && fc-cache -f -v
+
+# Copy custom fonts
+COPY fonts/ /usr/share/fonts/truetype/custom/
+RUN fc-cache -f -v && fc-list | grep HelveticaRounded
 # Set working directory
 WORKDIR /app
 
-# Install FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-
-# Copy project files
+# Copy files
 COPY . .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Command to run the bot
+# Run the bot
 CMD ["python", "bot.py"]
